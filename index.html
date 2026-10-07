@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Is Google Pay or Apple Pay available on this device?</title>
+<style>
+  :root {
+    --ink: #1c2430;
+    --muted: #5d6b7a;
+    --line: #d9dee5;
+    --ok-bg: #e4f4ea;  --ok-ink: #1f6b3a;
+    --no-bg: #fbe9e7;  --no-ink: #9a3324;
+    --wait-bg: #eef1f5; --wait-ink: #5d6b7a;
+    --link: #0b5fbf;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    background: #fff;
+  }
+  main { max-width: 42rem; margin: 0 auto; padding: 3rem 1.25rem 4rem; }
+  h1 { font-size: 1.75rem; line-height: 1.25; margin: 0 0 .5rem; }
+  .intro { color: var(--muted); margin: 0 0 2rem; }
+
+  .check {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: .25rem 1rem;
+    align-items: start;
+    padding: 1.25rem 0;
+    border-top: 1px solid var(--line);
+  }
+  .check:last-of-type { border-bottom: 1px solid var(--line); }
+  .check h2 { font-size: 1.1rem; margin: 0; grid-column: 1; }
+  .check p  { margin: 0; color: var(--muted); grid-column: 1; }
+  .status {
+    grid-column: 2; grid-row: 1 / span 2;
+    padding: .35rem .8rem;
+    border-radius: 999px;
+    font-weight: 600;
+    white-space: nowrap;
+    background: var(--wait-bg); color: var(--wait-ink);
+  }
+  .status.ok  { background: var(--ok-bg); color: var(--ok-ink); }
+  .status.no  { background: var(--no-bg); color: var(--no-ink); }
+
+  details { margin-top: 2rem; }
+  summary { cursor: pointer; font-weight: 600; }
+  details ul { padding-left: 1.25rem; color: var(--muted); }
+  details li { margin: .4rem 0; }
+  a { color: var(--link); }
+  button {
+    margin-top: 1.5rem;
+    font: inherit; font-weight: 600;
+    padding: .6rem 1.1rem;
+    border: 1px solid var(--ink); border-radius: 6px;
+    background: #fff; color: var(--ink);
+    cursor: pointer;
+  }
+  button:focus-visible { outline: 3px solid var(--link); outline-offset: 2px; }
+  @media (max-width: 480px) {
+    .check { grid-template-columns: 1fr; }
+    .status { grid-column: 1; grid-row: auto; justify-self: start; margin-top: .5rem; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Is Google Pay or Apple Pay available on this device?</h1>
+  <p class="intro">This page asks your browser whether a digital wallet is ready to use. Nothing is charged and no card details are read.</p>
+
+  <section class="check">
+    <h2>Google Pay</h2>
+    <p id="gpay-note">Checking…</p>
+    <span class="status" id="gpay-status">Checking</span>
+  </section>
+
+  <section class="check">
+    <h2>Apple Pay</h2>
+    <p id="apay-note">Checking…</p>
+    <span class="status" id="apay-status">Checking</span>
+  </section>
+
+  <button type="button" onclick="location.reload()">Run the check again</button>
+
+  <details>
+    <summary>If a wallet shows as not available</summary>
+    <ul>
+      <li>Make sure the wallet has at least one card saved.</li>
+      <li>Don't use an incognito or private window — wallets are hidden there.</li>
+      <li>Chrome: Settings → Autofill and passwords → Payment methods → turn on <em>Allow sites to check if you have payment methods saved</em>.</li>
+      <li>Safari: Settings → Advanced → turn on <em>Allow websites to check for Apple Pay and Apple Card</em>.</li>
+      <li>Apple Pay only appears in Safari on Apple devices. Google Pay appears in Chrome and most other browsers, but not in Safari.</li>
+      <li>Both wallets are only offered in <a href="https://support.google.com/wallet/answer/12060037" target="_blank" rel="noopener">supported Google Pay countries</a> and <a href="https://support.apple.com/en-us/102775" target="_blank" rel="noopener">supported Apple Pay countries</a>.</li>
+    </ul>
+  </details>
+</main>
+
+<script src="https://pay.google.com/gp/p/js/pay.js" async onload="checkGooglePay()" onerror="setResult('gpay', false, 'The Google Pay script could not load. Check your connection or ad blocker and try again.')"></script>
+<script>
+  function setResult(id, ok, note) {
+    var s = document.getElementById(id + '-status');
+    var n = document.getElementById(id + '-note');
+    s.textContent = ok ? 'Available' : 'Not available';
+    s.className = 'status ' + (ok ? 'ok' : 'no');
+    n.textContent = note;
+  }
+
+  function checkGooglePay() {
+    try {
+      var client = new google.payments.api.PaymentsClient({ environment: 'TEST' });
+      client.isReadyToPay({
+        apiVersion: 2,
+        apiVersionMinor: 0,
+        allowedPaymentMethods: [{
+          type: 'CARD',
+          parameters: {
+            allowedAuthMethods: ['PAN_ONLY', 'CRYPTOGRAM_3DS'],
+            allowedCardNetworks: ['AMEX', 'DISCOVER', 'JCB', 'MASTERCARD', 'VISA']
+          }
+        }],
+        existingPaymentMethodRequired: true
+      }).then(function (res) {
+        if (res.result && res.paymentMethodPresent) {
+          setResult('gpay', true, 'Google Pay is set up in this browser with at least one card saved.');
+        } else if (res.result) {
+          setResult('gpay', false, 'This browser supports Google Pay, but no card is saved in your Google account yet.');
+        } else {
+          setResult('gpay', false, 'This browser or device does not support Google Pay.');
+        }
+      }).catch(function () {
+        setResult('gpay', false, 'The browser would not answer. This usually means an incognito/private window or a browser setting is blocking wallet checks.');
+      });
+    } catch (e) {
+      setResult('gpay', false, 'The Google Pay check could not run in this browser.');
+    }
+  }
+
+  (function checkApplePay() {
+    if (window.ApplePaySession && ApplePaySession.canMakePayments()) {
+      setResult('apay', true, 'Apple Pay is available in this browser.');
+    } else if (/^((?!chrome|android).)*safari/i.test(navigator.userAgent)) {
+      setResult('apay', false, 'Safari reports that Apple Pay is not set up on this device, or a Safari setting is blocking the check.');
+    } else {
+      setResult('apay', false, 'Apple Pay only works in Safari on an iPhone, iPad or Mac.');
+    }
+  })();
+</script>
+</body>
+</html>
