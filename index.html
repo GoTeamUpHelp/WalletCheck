@@ -113,7 +113,7 @@
     <summary>If a wallet shows as not available</summary>
     <ul>
       <li>Open this page directly in Safari or Chrome, not from a link inside another app.</li>
-      <li>Make sure the wallet has at least one card saved.</li>
+      <li>Apple Pay needs at least one card in Wallet. Google Pay can add a card during checkout, but it's quicker if one is already saved at pay.google.com.</li>
       <li>Don't use an incognito or private window — wallets are hidden there.</li>
       <li>Chrome: Settings → Autofill and passwords → Payment methods → turn on <em>Allow sites to check if you have payment methods saved</em>.</li>
       <li>Safari: Settings → Advanced → turn on <em>Allow websites to check for Apple Pay and Apple Card</em>.</li>
@@ -131,11 +131,12 @@
       <dt>Apple Pay canMakePayments</dt><dd id="d-apay-result">–</dd>
       <dt>Google Pay supported</dt><dd id="d-gpay-result">–</dd>
       <dt>Google Pay card saved</dt><dd id="d-gpay-card">–</dd>
+      <dt>Google Pay (browser check)</dt><dd id="d-gpay-pr">–</dd>
     </dl>
   </div>
 </main>
 
-<script src="https://pay.google.com/gp/p/js/pay.js" async onload="checkGooglePay()" onerror="setResult('gpay', false, 'The Google Pay script could not load. Check your connection or ad blocker and try again.')"></script>
+<script src="https://pay.google.com/gp/p/js/pay.js" async onload="checkGooglePay()" onerror="checkGooglePayViaBrowser()"></script>
 <script>
   var ua = navigator.userAgent || '';
   var isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -183,16 +184,52 @@
       document.getElementById('d-gpay-result').textContent = String(!!res.result);
       document.getElementById('d-gpay-card').textContent = String(!!res.paymentMethodPresent);
       if (res.result && res.paymentMethodPresent) {
-        setResult('gpay', true, 'Google Pay is set up in this browser with at least one card saved.');
+        setResult('gpay', true, 'Google Pay is available in this browser, with a card already saved to your Google account.');
       } else if (res.result) {
-        setResult('gpay', false, 'This browser supports Google Pay, but no card is saved to the Google account you are signed in with.');
+        setResult('gpay', true, 'Google Pay is available in this browser. No card was found in your Google account, so you may be asked to add one at checkout.');
       } else {
-        setResult('gpay', false, 'This browser or device does not support Google Pay.');
+        checkGooglePayViaBrowser();
       }
     }).catch(function (err) {
       document.getElementById('d-gpay-result').textContent = 'error: ' + (err && err.statusCode ? err.statusCode : 'unknown');
-      setResult('gpay', false, 'The browser would not answer. This usually means an incognito/private window, an in-app browser, or a browser setting is blocking wallet checks.');
+      checkGooglePayViaBrowser();
     });
+  }
+
+  // Backstop: ask the browser directly, the way many checkout pages do.
+  function checkGooglePayViaBrowser() {
+    var el = document.getElementById('d-gpay-pr');
+    if (typeof window.PaymentRequest === 'undefined') {
+      el.textContent = 'not supported';
+      setResult('gpay', false, 'This browser or device does not support Google Pay.');
+      return;
+    }
+    try {
+      var pr = new PaymentRequest(
+        [{ supportedMethods: 'https://google.com/pay', data: {
+          apiVersion: 2, apiVersionMinor: 0,
+          allowedPaymentMethods: [{ type: 'CARD', parameters: {
+            allowedAuthMethods: ['PAN_ONLY', 'CRYPTOGRAM_3DS'],
+            allowedCardNetworks: ['AMEX', 'DISCOVER', 'JCB', 'MASTERCARD', 'VISA'] } }],
+          merchantInfo: { merchantName: 'Wallet check' }
+        } }],
+        { total: { label: 'Check', amount: { currency: 'USD', value: '0.00' } } }
+      );
+      pr.canMakePayment().then(function (ok) {
+        el.textContent = String(ok);
+        if (ok) {
+          setResult('gpay', true, 'Google Pay is available in this browser.');
+        } else {
+          setResult('gpay', false, 'This browser is not offering Google Pay. Make sure you are signed in to Google, not in incognito, and that the Chrome setting below is on.');
+        }
+      }).catch(function () {
+        el.textContent = 'error';
+        setResult('gpay', false, 'The browser would not answer. This usually means an incognito/private window, an in-app browser, or a browser setting is blocking wallet checks.');
+      });
+    } catch (e) {
+      el.textContent = 'error';
+      setResult('gpay', false, 'This browser or device does not support Google Pay.');
+    }
   }
 
   (function checkApplePay() {
