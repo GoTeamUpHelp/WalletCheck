@@ -12,6 +12,7 @@
     --ok-bg: #e4f4ea;  --ok-ink: #1f6b3a;
     --no-bg: #fbe9e7;  --no-ink: #9a3324;
     --wait-bg: #eef1f5; --wait-ink: #5d6b7a;
+    --warn-bg: #fff4d6; --warn-ink: #7a4b00;
     --link: #0b5fbf;
   }
   * { box-sizing: border-box; }
@@ -24,6 +25,16 @@
   main { max-width: 42rem; margin: 0 auto; padding: 3rem 1.25rem 4rem; }
   h1 { font-size: 1.75rem; line-height: 1.25; margin: 0 0 .5rem; }
   .intro { color: var(--muted); margin: 0 0 2rem; }
+
+  .warn {
+    display: none;
+    background: var(--warn-bg); color: var(--warn-ink);
+    padding: 1rem 1.25rem; border-radius: 8px; margin-bottom: 2rem;
+  }
+  .warn.show { display: block; }
+  .warn p { margin: 0; }
+  .warn p + p { margin-top: .5rem; }
+  .warn code { font-size: .95em; word-break: break-all; }
 
   .check {
     display: grid;
@@ -61,6 +72,13 @@
     cursor: pointer;
   }
   button:focus-visible { outline: 3px solid var(--link); outline-offset: 2px; }
+  .diag {
+    margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line);
+    font-size: .85rem; color: var(--muted);
+  }
+  .diag dl { margin: .5rem 0 0; display: grid; grid-template-columns: max-content 1fr; gap: .15rem 1rem; }
+  .diag dt { font-weight: 600; }
+  .diag dd { margin: 0; word-break: break-word; }
   @media (max-width: 480px) {
     .check { grid-template-columns: 1fr; }
     .status { grid-column: 1; grid-row: auto; justify-self: start; margin-top: .5rem; }
@@ -71,6 +89,11 @@
 <main>
   <h1>Is Google Pay or Apple Pay available on this device?</h1>
   <p class="intro">This page asks your browser whether a digital wallet is ready to use. Nothing is charged and no card details are read.</p>
+
+  <div class="warn" id="webview-warn">
+    <p>It looks like this page opened inside another app (such as Slack, Teams, Gmail or the TeamUp chat). Apps hide wallets from pages they open, so the results below won't be accurate.</p>
+    <p>Copy this link and open it in Safari or Chrome instead: <code id="self-url"></code></p>
+  </div>
 
   <section class="check">
     <h2>Google Pay</h2>
@@ -89,18 +112,46 @@
   <details>
     <summary>If a wallet shows as not available</summary>
     <ul>
+      <li>Open this page directly in Safari or Chrome, not from a link inside another app.</li>
       <li>Make sure the wallet has at least one card saved.</li>
       <li>Don't use an incognito or private window — wallets are hidden there.</li>
       <li>Chrome: Settings → Autofill and passwords → Payment methods → turn on <em>Allow sites to check if you have payment methods saved</em>.</li>
       <li>Safari: Settings → Advanced → turn on <em>Allow websites to check for Apple Pay and Apple Card</em>.</li>
-      <li>Apple Pay only appears in Safari on Apple devices. Google Pay appears in Chrome and most other browsers, but not in Safari.</li>
+      <li>Apple Pay only works on Apple devices: in Safari on a Mac, and in Safari, Chrome or Firefox on iPhone and iPad (iOS 16 or later). It never appears on Windows or Android.</li>
       <li>Both wallets are only offered in <a href="https://support.google.com/wallet/answer/12060037" target="_blank" rel="noopener">supported Google Pay countries</a> and <a href="https://support.apple.com/en-us/102775" target="_blank" rel="noopener">supported Apple Pay countries</a>.</li>
     </ul>
   </details>
+
+  <div class="diag">
+    Technical details (useful if you contact support)
+    <dl>
+      <dt>Browser</dt><dd id="d-ua"></dd>
+      <dt>Opened inside an app</dt><dd id="d-webview"></dd>
+      <dt>Apple Pay API present</dt><dd id="d-apay-api"></dd>
+      <dt>Apple Pay canMakePayments</dt><dd id="d-apay-result">–</dd>
+      <dt>Google Pay supported</dt><dd id="d-gpay-result">–</dd>
+      <dt>Google Pay card saved</dt><dd id="d-gpay-card">–</dd>
+    </dl>
+  </div>
 </main>
 
 <script src="https://pay.google.com/gp/p/js/pay.js" async onload="checkGooglePay()" onerror="setResult('gpay', false, 'The Google Pay script could not load. Check your connection or ad blocker and try again.')"></script>
 <script>
+  var ua = navigator.userAgent || '';
+  var isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var isApple = isIOS || /Macintosh/.test(ua);
+
+  // In-app browsers (WKWebView etc.) don't expose wallets. Heuristics, not perfect.
+  var inAppMarkers = /FBAN|FBAV|Instagram|Slack|Teams|GSA\/|Line\/|Twitter|LinkedInApp|Intercom/i.test(ua);
+  var iosWebView = isIOS && !/Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+  var androidWebView = /Android/.test(ua) && /; wv\)|Version\/\d/.test(ua);
+  var inWebView = inAppMarkers || iosWebView || androidWebView;
+
+  document.getElementById('d-ua').textContent = ua;
+  document.getElementById('d-webview').textContent = inWebView ? 'Probably yes' : 'No';
+  document.getElementById('self-url').textContent = location.href;
+  if (inWebView) document.getElementById('webview-warn').className = 'warn show';
+
   function setResult(id, ok, note) {
     var s = document.getElementById(id + '-status');
     var n = document.getElementById(id + '-note');
@@ -110,42 +161,58 @@
   }
 
   function checkGooglePay() {
+    var client;
     try {
-      var client = new google.payments.api.PaymentsClient({ environment: 'TEST' });
-      client.isReadyToPay({
-        apiVersion: 2,
-        apiVersionMinor: 0,
-        allowedPaymentMethods: [{
-          type: 'CARD',
-          parameters: {
-            allowedAuthMethods: ['PAN_ONLY', 'CRYPTOGRAM_3DS'],
-            allowedCardNetworks: ['AMEX', 'DISCOVER', 'JCB', 'MASTERCARD', 'VISA']
-          }
-        }],
-        existingPaymentMethodRequired: true
-      }).then(function (res) {
-        if (res.result && res.paymentMethodPresent) {
-          setResult('gpay', true, 'Google Pay is set up in this browser with at least one card saved.');
-        } else if (res.result) {
-          setResult('gpay', false, 'This browser supports Google Pay, but no card is saved in your Google account yet.');
-        } else {
-          setResult('gpay', false, 'This browser or device does not support Google Pay.');
-        }
-      }).catch(function () {
-        setResult('gpay', false, 'The browser would not answer. This usually means an incognito/private window or a browser setting is blocking wallet checks.');
-      });
+      client = new google.payments.api.PaymentsClient({ environment: 'PRODUCTION' });
     } catch (e) {
       setResult('gpay', false, 'The Google Pay check could not run in this browser.');
+      return;
     }
+    client.isReadyToPay({
+      apiVersion: 2,
+      apiVersionMinor: 0,
+      allowedPaymentMethods: [{
+        type: 'CARD',
+        parameters: {
+          allowedAuthMethods: ['PAN_ONLY', 'CRYPTOGRAM_3DS'],
+          allowedCardNetworks: ['AMEX', 'DISCOVER', 'JCB', 'MASTERCARD', 'VISA']
+        }
+      }],
+      existingPaymentMethodRequired: true
+    }).then(function (res) {
+      document.getElementById('d-gpay-result').textContent = String(!!res.result);
+      document.getElementById('d-gpay-card').textContent = String(!!res.paymentMethodPresent);
+      if (res.result && res.paymentMethodPresent) {
+        setResult('gpay', true, 'Google Pay is set up in this browser with at least one card saved.');
+      } else if (res.result) {
+        setResult('gpay', false, 'This browser supports Google Pay, but no card is saved to the Google account you are signed in with.');
+      } else {
+        setResult('gpay', false, 'This browser or device does not support Google Pay.');
+      }
+    }).catch(function (err) {
+      document.getElementById('d-gpay-result').textContent = 'error: ' + (err && err.statusCode ? err.statusCode : 'unknown');
+      setResult('gpay', false, 'The browser would not answer. This usually means an incognito/private window, an in-app browser, or a browser setting is blocking wallet checks.');
+    });
   }
 
   (function checkApplePay() {
-    if (window.ApplePaySession && ApplePaySession.canMakePayments()) {
-      setResult('apay', true, 'Apple Pay is available in this browser.');
-    } else if (/^((?!chrome|android).)*safari/i.test(navigator.userAgent)) {
-      setResult('apay', false, 'Safari reports that Apple Pay is not set up on this device, or a Safari setting is blocking the check.');
+    var hasApi = typeof window.ApplePaySession !== 'undefined';
+    document.getElementById('d-apay-api').textContent = hasApi ? 'Yes' : 'No';
+    if (hasApi) {
+      var can = false;
+      try { can = ApplePaySession.canMakePayments(); } catch (e) {}
+      document.getElementById('d-apay-result').textContent = String(can);
+      if (can) {
+        setResult('apay', true, 'Apple Pay is available in this browser.');
+      } else {
+        setResult('apay', false, 'This browser supports Apple Pay, but it is not set up on this device or a Safari setting is blocking the check.');
+      }
+    } else if (inWebView && isApple) {
+      setResult('apay', false, 'This page opened inside another app, which hides Apple Pay. Open it in Safari to check properly.');
+    } else if (isApple) {
+      setResult('apay', false, 'This browser is not exposing Apple Pay. Try Safari, or update to iOS 16 or later for Chrome and Firefox.');
     } else {
-      setResult('apay', false, 'Apple Pay only works in Safari on an iPhone, iPad or Mac.');
+      setResult('apay', false, 'Apple Pay only works on an iPhone, iPad or Mac.');
     }
   })();
 </script>
